@@ -1,0 +1,54 @@
+# fileupload
+upstream fileupload {
+   server 127.0.0.1:9100 fail_timeout=0;
+   server 127.0.0.1:9101 fail_timeout=0;
+   server 127.0.0.1:9102 fail_timeout=0;
+   server 127.0.0.1:9103 fail_timeout=0;
+}
+
+server {
+    listen 80;
+    server_name '';
+    index index.html index.htm index.jsp;
+    charset utf-8;
+
+    set $x_remote_addr $http_x_real_ip;
+    if ($x_remote_addr = "") {
+        set $x_remote_addr $remote_addr;
+    }
+
+    log_format main '$x_remote_addr "$time_iso8601" $request_method "$uri" "$args" "$request_body" $status $body_bytes_sent $request_time "$http_user_agent"';
+    access_log /opt/logs/nginx/access/log main;
+
+    location /media {
+        root /var/www;
+    }
+
+    location /file/upload {
+        upload_pass http://fileupload;
+        upload_store /tmp/files;
+
+        upload_set_form_field $upload_field_name.name "$upload_file_name";
+        upload_set_form_field $upload_field_name.content_type "$upload_content_type";
+        upload_set_form_field $upload_field_name.path "$upload_tmp_path";
+
+        upload_aggregate_form_field "$upload_field_name.md5" "$upload_file_md5";
+        upload_aggregate_form_field "$upload_field_name.size" "$upload_file_size";
+
+        upload_cleanup 400 404 499 500-505;
+    }
+
+    location / {
+        proxy_pass          http://fileupload;
+
+        proxy_connect_timeout 3;
+        proxy_send_timeout 3;
+        proxy_read_timeout 3;
+
+        proxy_redirect      default;
+        proxy_set_header    X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header    X-Real-IP $x_remote_addr;
+        proxy_set_header    Host $http_host;
+        proxy_set_header    Range $http_range;
+    }
+}
